@@ -1,0 +1,2 @@
+# wifi_setting_tool
+可以通过读取wpa_supplicant.conf控制多个wifi的连接，连接完后第一次按p13还会进入程序附带的ip_show_tool IP显示工具，方便查看IP（详见我的ip_show_tool仓库）
