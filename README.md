@@ -8,7 +8,7 @@
 - 附：什么叫做我开发的，分明是deepseek开发我迁移的（ds负责了读取wpa_supplicant.conf，列出wifi，连接wifi，我写了选择wifi与gui化）
 - 感谢deepseek开源.jpg
 - 这个群就我没本领.gif
-- 鸣谢：
+# 鸣谢：
 - 逐飞，没库我搞不出来一点
 - 某几个ACM仙人给我补的c与c++知识
 - 感谢deepseek开源
