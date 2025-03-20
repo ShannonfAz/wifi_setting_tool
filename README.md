@@ -62,3 +62,90 @@ network={
         （下面就没东西了，因为wpa2根本不用写key_mgnt）（还是那句话，别把这堆玩意抄上去了）
 }
 ```
+- 最终我的wpa_supplicant.conf长这样
+```
+ctrl_interface=/var/run/wpa_supplicant
+ctrl_interface_group=0
+update_config=1
+
+network={
+        ssid="我那个热点的名字"
+        psk="密码"
+}
+
+network={
+        ssid="一个公共wifi的名字"
+        key_mgmt=NONE
+}
+```
+- 至少对于你第一次配置是这样
+- 在我这个wifi_setting_tool运行过后，你没连的wifi会被标记disable
+- 所以其实我现在的wpa_supplicant.conf其实长这样
+```
+ctrl_interface=/var/run/wpa_supplicant
+ctrl_interface_group=0
+update_config=1
+
+network={
+        ssid="我那个热点的名字"
+        psk="密码"
+}
+
+network={
+        ssid="一个公共wifi的名字"
+        key_mgmt=NONE
+        disabled=1
+}
+```
+- 这是正常现象
+- 在配完你的wpa_supplicant.conf之后，按esc，然后:wq保存退出，进入第六步
+- 6.vi rc.local（你现在还在/etc/，不是吗）
+- 直接抄，复制粘贴
+```
+#! /bin/bash -e
+
+do_start()
+{
+#systemctl disable dhcpcd
+#systemctl stop dhcpcd
+insmod /usr/lib/modules/4.19.190+/aic8800_bsp.ko
+insmod /usr/lib/modules/4.19.190+/aic8800_fdrv.ko
+
+sleep 3
+
+#hostapd -B /etc/hostapd.conf -f /var/log/hstap.log &
+#udhcpd -f /etc/udhcpd.conf &
+home/root/wifi_setting_tool &
+}
+do_stop()
+{
+rmmod aic8800_fdrv.ko
+rmmod aic8800_bsp.ko
+}
+case "$1" in
+   start)
+     do_start
+   ;;
+   stop)
+     do_stop
+   ;;
+ esac
+
+exit 0
+```
+- 放心，连udhcpc -i wlan0 &都不用加，这个程序已经帮你搞定了联网所需的一切
+- 确认一下你/home/root里头有那个wifi_setting_tool后，你就可以
+- sync
+- reboot
+- 了
+- 重启后，该工具自动运行，观察逐飞扩展板，会发现最左侧（靠近电源开关）有四个按钮
+- 从上到下分别为
+- 丝印p16 向上选择
+- 丝印p15 向下选择
+- 丝印p14 确认并连接wifi（由于某些幺蛾子，你开机时必须按一次这个按键才会联网）
+- 丝印p13 退出（长按0.2s）
+- 开机后，通过p16与p15选择你想连接的wifi（就是你刚刚修改的wpa_supplicant.conf里面的那些配置）
+- 然后按p14连接
+- 连接完后按p13 0.2s以上，退出wifi连接功能
+- 松手进入ip查询与显示功能，此时会查询板卡的eth0与wlan0的信息并显示到屏幕上，就是之前我那个ip_show_tool仓库程序的功能
+- 再度长按p13 0.2s，屏幕变白后即代表程序已退出，可以运行你的循迹代码了
