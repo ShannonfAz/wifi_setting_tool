@@ -1,5 +1,6 @@
 # WARNING:仅基于逐飞方案，使用逐飞内核，使用逐飞扩展板或屏幕引脚与逐飞扩展板相同可用该工具
 # 该程序目前版本为0.1，第一版，有问题欢迎提issue
+# 目前最多只能显示16个wifi配置，未来有精力也许会更新滚动功能
 # wifi_setting_tool
 可以通过读取wpa_supplicant.conf控制多个wifi的连接，连接完后第一次按p13还会进入程序附带的ip_show_tool IP显示工具，方便查看IP（详见我的ip_show_tool仓库）
 # 项目说明：
