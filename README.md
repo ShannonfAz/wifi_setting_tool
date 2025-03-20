@@ -42,5 +42,23 @@ network={
       ssid="这是你要连的wifi的名字，别**抄这堆汉字上去，用你那wifi名字替换这句话"
       psk="这是你的密码"
       key_mgnt=这是你的wifi加密方式，别**加引号
+      以及其他乱七八糟的配置
 }
-关于这个加密方式，以下贴一篇文章:(https://blog.csdn.net/ylxwk/article/details/135116188)
+```
+- 关于这个加密方式，以下贴一篇文章:[Linux 命令行调试WiFi](https://blog.csdn.net/ylxwk/article/details/135116188)
+- 下面贴示例
+- 以下是一个公共wifi的配置
+```
+network={
+        ssid="那个公共wifi的名字"
+        key_mgmt=NONE
+}
+```
+- 以下是一个使用wpa2加密的wifi配置（例如手机热点）
+```
+network={
+        ssid="wifi名。"
+        psk="密码。"
+        （下面就没东西了，因为wpa2根本不用写key_mgnt）（还是那句话，别把这堆玩意抄上去了）
+}
+```
