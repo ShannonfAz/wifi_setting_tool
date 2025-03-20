@@ -3,7 +3,7 @@
 # wifi_setting_tool
 可以通过读取wpa_supplicant.conf控制多个wifi的连接，连接完后第一次按p13还会进入程序附带的ip_show_tool IP显示工具，方便查看IP（详见我的ip_show_tool仓库）
 # 项目说明：
-- 基于逐飞开源库开发的wifi选择与连接工具，可以往板卡上配置多个wifi信息并在开机时选择wifi进行连接，使用逐飞屏幕库进行gui设计，可视化强，便于配置wifi
+- 基于逐飞开源库开发的wifi选择与连接工具，可以往久久派板卡上配置多个wifi信息并在开机时选择wifi进行连接，使用逐飞屏幕库进行gui设计，可视化强，便于配置wifi
 - 附：什么叫做我开发的，分明是deepseek开发我迁移的（ds负责了读取wpa_supplicant.conf，列出wifi，连接wifi，我写了选择wifi与gui化）
 - 感谢deepseek开源.jpg
 - 这个群就我没本领.gif
