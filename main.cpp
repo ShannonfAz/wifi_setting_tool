@@ -262,6 +262,7 @@ int show_wlan0_on_screen(){
 }
 int main() {
 	exec("wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf");
+	exec("udhcpc -i wlan0");
 	ips200_init("/dev/fb0");
 	ips200_clear();
 	unsigned int i;
