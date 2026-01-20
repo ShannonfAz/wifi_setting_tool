@@ -1,3 +1,4 @@
+
 /*********************************************************************************************************************
 * LS2K0300 Opensourec Library 即（LS2K0300 开源库）是一个基于官方 SDK 接口的第三方开源库
 * Copyright (c) 2022 SEEKFREE 逐飞科技
@@ -28,7 +29,7 @@
 *
 * 修改记录
 * 日期              作者           备注
-* 2025-02-27        大W            first version
+* 2025-12-27        大W            first version
 ********************************************************************************************************************/
 #include <iostream>
 #include <cstring>
@@ -42,26 +43,37 @@
 #include <cstdlib>
 #include <cstdio>
 #include <regex>
-#include "zf_common_headfile.h"
+#include "zf_common_headfile.hpp"
 
-#define KEY_0       "/dev/zf_driver_gpio_key_0"
-#define KEY_1       "/dev/zf_driver_gpio_key_1"
-#define KEY_2       "/dev/zf_driver_gpio_key_2"
-#define KEY_3       "/dev/zf_driver_gpio_key_3"
+#define KEY_1_PATH        ZF_GPIO_KEY_1
+#define KEY_2_PATH        ZF_GPIO_KEY_2
+#define KEY_3_PATH        ZF_GPIO_KEY_3
+#define KEY_4_PATH        ZF_GPIO_KEY_4
 
-int16_t data_index = 0;
-using namespace std;
+zf_driver_gpio  key_0(KEY_1_PATH, O_RDWR);
+zf_driver_gpio  key_1(KEY_2_PATH, O_RDWR);
+zf_driver_gpio  key_2(KEY_3_PATH, O_RDWR);
+zf_driver_gpio  key_3(KEY_4_PATH, O_RDWR);
 
-// 执行命令并获取输出
-void ips200_list_string(uint8 start_line,uint8 line,const char dat[]){
-    ips200_show_string(0,16*(line+start_line-2),dat);
+zf_device_ips200 ips200;
+
+void sigint_handler(int signum) 
+{
+    printf("收到Ctrl+C，程序即将退出\n");
+    exit(0);
 }
-//ips200_list_string(从第几行开始显示，显示第几行，你要输出的玩意);
-string exec(const char* cmd) {
+
+void cleanup()
+{
+    // 需要先停止定时器线程，后面才能稳定关闭电机，电调，舵机等
+    printf("程序异常退出，执行清理操作\n");
+    // 关闭电机  
+}
+std::string exec(const char* cmd) {
     char buffer[128];
-    string result = "";
+    std::string result = "";
     FILE* pipe = popen(cmd, "r");
-    if (!pipe) throw runtime_error("popen() failed!");
+    if (!pipe) throw std::runtime_error("popen() failed!");
     try {
         while (fgets(buffer, sizeof buffer, pipe) != NULL) {
             result += buffer;
@@ -73,52 +85,43 @@ string exec(const char* cmd) {
     pclose(pipe);
     return result;
 }
-
-// 获取无线接口
-string get_wireless_interface() {
-    try {
-        string output = exec("iwconfig 2>&1");
-        istringstream iss(output);
-        string line;
-        while (getline(iss, line)) {
-            if (line.find("IEEE 802.11") != string::npos) {
-                return line.substr(0, line.find(" "));
-            }
-        }
-    } catch (...) {}
+std::string get_wireless_interface() {
+    // try {
+    //     std::string output = exec("iwconfig 2>&1");
+    //     std::istringstream iss(output);
+    //     std::string line;
+    //     while (getline(iss, line)) {
+    //         if (line.find("IEEE 802.11") != std::string::npos) {
+    //             return line.substr(0, line.find(" "));
+    //         }
+    //     }
+    // } catch (...) {}
     return "wlan0"; // 默认值
 }
-
-// 网络信息结构体
 struct NetworkInfo {
-    string id;
-    string ssid;
-    string flags;
+    std::string id;
+    std::string ssid;
+    std::string flags;
 };
+std::vector<NetworkInfo> get_networks(const std::string& interface) {
+    std::vector<NetworkInfo> networks;
+    std::string cmd = "wpa_cli -i " + interface + " list_networks";
+    std::string output = exec(cmd.c_str());
 
-// 获取并解析网络列表
-vector<NetworkInfo> get_networks(const string& interface) {
-    vector<NetworkInfo> networks;
-    string cmd = "wpa_cli -i " + interface + " list_networks";
-    string output = exec(cmd.c_str());
-
-    istringstream iss(output);
-    string line;
+    std::istringstream iss(output);
+    std::string line;
     bool header_found = false;
 
     while (getline(iss, line)) {
-        // 改进的标题检测逻辑
         if (!header_found) {
-            if (line.find("network id") != string::npos) {
+            if (line.find("network id") != std::string::npos) {
                 header_found = true;
             }
             continue;
         }
-
-        // 改进的字段解析逻辑
-        regex re("\\t+");
-        sregex_token_iterator it(line.begin(), line.end(), re, -1);
-        vector<string> parts(it, {});
+        std::regex re("\\t+");
+        std::sregex_token_iterator it(line.begin(), line.end(), re, -1);
+        std::vector<std::string> parts(it, {});
 
         if (parts.size() >= 3) {
             NetworkInfo info;
@@ -130,13 +133,11 @@ vector<NetworkInfo> get_networks(const string& interface) {
     }
     return networks;
 }
+bool select_network(const std::string& interface, const std::string& net_id) {
+    std::string cmd = "wpa_cli -i " + interface + " select_network " + net_id;
+    std::string result = exec(cmd.c_str());
 
-// 选择指定网络
-bool select_network(const string& interface, const string& net_id) {
-    string cmd = "wpa_cli -i " + interface + " select_network " + net_id;
-    string result = exec(cmd.c_str());
-
-    if (result.find("OK") != string::npos) {
+    if (result.find("OK") != std::string::npos) {
         exec(("wpa_cli -i " + interface + " save_config").c_str());
         //cout << "已成功选择网络，正在连接..." << endl;
 		exec("udhcpc -i wlan0");
@@ -147,212 +148,468 @@ bool select_network(const string& interface, const string& net_id) {
     }
     return false;
 }
-vector<string> ips_wlan_list;
-string interface = get_wireless_interface();
+std::vector<std::string> ips_wlan_list;
+std::string interface = get_wireless_interface();
 auto find_wifi(){
 	ips_wlan_list.clear();
-	// 获取无线接口
-	//cout << "当前无线接口: " << interface << endl;
-
-	// 获取网络列表
 	auto networks = get_networks(interface);
-	//cout <<networks.empty()<<endl;
-	if (networks.empty()) {
-		//cerr << "没有找到已保存的网络" << endl;
-		//return 1;
-	}
-
-	// 显示网络列表
-	//cout << "\n已保存的WiFi网络:" << endl;
 	for (size_t i = 0; i < networks.size(); ++i) {
-		string status = (networks[i].flags.find("CURRENT") != string::npos) ?
+		std::string status = (networks[i].flags.find("CURRENT") != std::string::npos) ?
 					   "当前连接" : "已保存";
-		//cout << i+1 << ". " << networks[i].ssid << " (" << status << ")" << endl;
-		if(status == "当前连接")ips_wlan_list.push_back(to_string(i+1)+"."+networks[i].ssid+"(connect)");
-		else ips_wlan_list.push_back(to_string(i+1)+"."+networks[i].ssid);
+		if(status == "当前连接")ips_wlan_list.push_back(std::to_string(i+1)+"."+networks[i].ssid+"(connect)");
+		else ips_wlan_list.push_back(std::to_string(i+1)+"."+networks[i].ssid);
 	}
 	return networks;
 }
-void connect_wifi(vector<NetworkInfo> networks,int choice){
-	// 用户输入处理
-	//cout << "\n请输入要连接的网络编号: ";
-	// int choice;
-	// cin >> choice;
-
-	if (cin.fail() || choice < 1 || choice > static_cast<int>(networks.size())) {
-		//cerr << "无效的输入" << endl;
-		//return 1;
-	}
-
-	// 执行网络切换
+void connect_wifi(std::vector<NetworkInfo> networks,int choice){
 	if (select_network(interface, networks[choice-1].id)) {
-		//cout << "\n连接状态:" << endl;
-		string status = exec(("wpa_cli -i " + interface + " status").c_str());
-		//cout << status;
-	} else {
-		//cerr << "网络切换失败" << endl;
-		//return 1;
+		std::string status = exec(("wpa_cli -i " + interface + " status").c_str());
 	}
 }
 char eth0[INET_ADDRSTRLEN];
 int show_eth0_on_screen(){
-	    // 创建socket
 		int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-		if (sockfd < 0) {
-			//std::cerr << "无法创建socket" << std::endl;
-		}
-	
 		struct ifreq ifr;
 		memset(&ifr, 0, sizeof(ifr));
 		strncpy(ifr.ifr_name, "eth0", IFNAMSIZ - 1);
-	
-		// 获取IPv4地址
 		if (ioctl(sockfd, SIOCGIFADDR, &ifr) == -1) {
-			//std::cerr << "无法获取IP地址（请检查接口名称和权限）" << std::endl;
 			close(sockfd);
 			return 0;
 		}
-	
-		// 转换二进制地址为字符串
 		struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
 		if (inet_ntop(AF_INET, &ipaddr->sin_addr, eth0, sizeof(eth0))) {
-			//std::cout << "eth0 IP地址: " << eth0 << std::endl;
-			ips200_show_string( 0 , 0,   "eth0:");
-			ips200_show_string( 0 , 16,   eth0);
+			ips200.show_string( 0 , 0,   "eth0:");
+			ips200.show_string( 0 , 16,   eth0);
 		} else {
-			//std::cerr << "地址转换失败" << std::endl;
 			close(sockfd);
 		}
-		
 		close(sockfd);
 		return 0;
 }
 char wlan0[INET_ADDRSTRLEN];
 int show_wlan0_on_screen(){
-	    // 创建socket
 		int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-		if (sockfd < 0) {
-			//std::cerr << "无法创建socket" << std::endl;
-		}
-	
 		struct ifreq ifr;
 		memset(&ifr, 0, sizeof(ifr));
 		strncpy(ifr.ifr_name, "wlan0", IFNAMSIZ - 1);
-	
-		// 获取IPv4地址
 		if (ioctl(sockfd, SIOCGIFADDR, &ifr) == -1) {
-			//std::cerr << "无法获取IP地址（请检查接口名称和权限）" << std::endl;
 			close(sockfd);
 			return 0;
 		}
-	
-		// 转换二进制地址为字符串
 		struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
 		if (inet_ntop(AF_INET, &ipaddr->sin_addr, wlan0, sizeof(wlan0))) {
-			//std::cout << "wlan0 IP地址: " << wlan0 << std::endl;
-			ips200_show_string( 0 , 32,   "wlan0:");
-			ips200_show_string( 0 , 48,   wlan0);
+			ips200.show_string( 0 , 32,   "wlan0:");
+			ips200.show_string( 0 , 48,   wlan0);
 		} else {
-			//std::cerr << "地址转换失败" << std::endl;
 			close(sockfd);
 		}
-	
 		close(sockfd);
 		return 0;
 }
-int main() {
-	exec("wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf");
+int main(int,char**) {
+	exec("wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf -D nl80211");
 	exec("udhcpc -i wlan0");
-	ips200_init("/dev/fb0");
-	ips200_clear();
+	ips200.init(FB_PATH,0);
+	ips200.clear();
 	unsigned int i;
-	//vector<char> wlanlist_temp;
 	bool configure_state = 0;
 	uint wifi_num = 1;
 	while(1){
 		auto network = find_wifi();
 		while(!configure_state){
 			find_wifi();
-			ips200_list_string(1,1,"WIFI list");
-			for(i = 0;i < ips_wlan_list.size();i++)		ips200_list_string(2,i+1,ips_wlan_list[i].c_str());
-			ips200_list_string(18,1,"up:p16,down:p15");
-			ips200_list_string(19,1,"press p14 to connect to:");
-			if(!gpio_get_level(KEY_3)){
+			ips200.show_string(0,0,"WIFI list");
+			for(i = 0;i < ips_wlan_list.size();i++)ips200.show_string(0,16*(i+1),ips_wlan_list[i].c_str());
+			ips200.show_string(0,16*17,"up:p16,down:p15");
+			ips200.show_string(0,16*18,"press p14 to connect to:");
+			if(!key_3.get_level()){
 				system_delay_ms(50);
-				while(!gpio_get_level(KEY_3));
-				//if(gpio_get_level(KEY_3)){
-					wifi_num--;
-					ips200_clear();
-				//}
+				while(!key_3.get_level());
+				wifi_num--;
+				ips200.clear();
 			}
-			if(!gpio_get_level(KEY_2)){
+			if(!key_2.get_level()){
 				system_delay_ms(50);
-				while(!gpio_get_level(KEY_2));
-				//if(gpio_get_level(KEY_2)){
-					wifi_num++;
-					ips200_clear();
-				//}
+				while(!key_2.get_level());
+				wifi_num++;
+				ips200.clear();
 			}
-			//cout<<wifi_num<<endl;
 			if(wifi_num == 0)wifi_num = 1;
 			if(wifi_num == ips_wlan_list.size()+1)wifi_num = ips_wlan_list.size();
-			ips200_list_string(1,1,"WIFI list");
-			for(i = 0;i < ips_wlan_list.size();i++)		ips200_list_string(2,i+1,ips_wlan_list[i].c_str());
-			ips200_list_string(18,1,"up:p16,down:p15,quit:p13");
-			ips200_list_string(19,1,"press p14 to connect to:");
-			ips200_list_string(20,1,ips_wlan_list[wifi_num-1].c_str());
+			ips200.show_string(0,0,"WIFI list");
+			for(i = 0;i < ips_wlan_list.size();i++)ips200.show_string(0,16*(i+1),ips_wlan_list[i].c_str());
+			ips200.show_string(0,16*17,"up:p16,down:p15");
+			ips200.show_string(0,16*18,"press p14 to connect to:");
+			ips200.show_string(0,16*19,ips_wlan_list[wifi_num-1].c_str());
 
-			if(!gpio_get_level(KEY_1)){
+			if(!key_1.get_level()){
 				system_delay_ms(50);
-				while(!gpio_get_level(KEY_1));
-				//if(gpio_get_level(KEY_1)){
-					configure_state = 1;
-				//}
+				while(!key_1.get_level());
+				configure_state = 1;
 			}
-			if(!gpio_get_level(KEY_0)){
+			if(!key_0.get_level()){
 				system_delay_ms(200);
-				if(!gpio_get_level(KEY_0)){
-					//ips200_show_string(0,96,"quit");
-					ips200_clear();
+				if(!key_0.get_level()){
+					ips200.clear();
 					goto a1;
 				}
 			}
 		}
 		connect_wifi(network,wifi_num);
 		find_wifi();
-		ips200_clear();
-		ips200_list_string(1,1,"WIFI list");
-		for(i = 0;i < ips_wlan_list.size();i++)		ips200_list_string(2,i+1,ips_wlan_list[i].c_str());
-		ips200_list_string(18,1,"up:p16,down:p15,quit:p13");
-		ips200_list_string(19,1,"press p14 to connect to:");
-		ips200_list_string(20,1,ips_wlan_list[wifi_num-1].c_str());
+		ips200.clear();
+        ips200.show_string(0,0,"WIFI list");
+        for(i = 0;i < ips_wlan_list.size();i++)ips200.show_string(0,16*(i+1),ips_wlan_list[i].c_str());
+        ips200.show_string(0,16*17,"up:p16,down:p15");
+        ips200.show_string(0,16*18,"press p14 to connect to:");
+        ips200.show_string(0,16*19,ips_wlan_list[wifi_num-1].c_str());
 		configure_state = 0;
-		if(!gpio_get_level(KEY_0)){
+		if(!key_0.get_level()){
 			system_delay_ms(200);
-			if(!gpio_get_level(KEY_0)){
-				//ips200_show_string(0,96,"quit");
-				ips200_clear();
+			if(!key_0.get_level()){
+				ips200.clear();
 				goto a1;
 			}
 		}
 	}
-	a1:ips200_clear();
-	while(!gpio_get_level(KEY_0));
+	a1:ips200.clear();
+	while(!key_0.get_level());
 	while(1)
     {
         // 此处编写需要循环执行的代码
 		show_eth0_on_screen();
 		show_wlan0_on_screen();
-		ips200_show_string(0,64,"press P13 key");
-		ips200_show_string(0,80,"for 0.2s to quit");
-		if(!gpio_get_level(KEY_0)){
+		ips200.show_string(0,64,"press P13 key");   
+		ips200.show_string(0,80,"for 0.2s to quit");
+		if(!key_0.get_level()){
 			system_delay_ms(200);
-			if(!gpio_get_level(KEY_0)){
-				//ips200_show_string(0,96,"quit");
-				ips200_clear();
+			if(!key_0.get_level()){
+				ips200.clear();
 				return 0;
 			}
 		}
 		system_delay_ms(100);
     }
 }
+
+// **************************** 代码区域 ****************************
+
+// *************************** 例程常见问题说明 ***************************
+// 遇到问题时请按照以下问题检查列表检查
+// 
+// 问题1：终端提示未找到xxx文件
+//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
+//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
+//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
+//
+// 问题2：电机不转或者模块输出电压无变化
+//      如果使用主板测试，主板必须要用电池供电
+//      检查模块是否正确连接供电 必须使用电源线供电 不能使用杜邦线
+//      查看程序是否正常烧录，是否下载报错，确认正常按下复位按键
+/*********************************************************************************************************************
+* LS2K0300 Opensourec Library 即（LS2K0300 开源库）是一个基于官方 SDK 接口的第三方开源库
+* Copyright (c) 2022 SEEKFREE 逐飞科技
+*
+* 本文件是LS2K0300 开源库的一部分
+*
+* LS2K0300 开源库 是免费软件
+* 您可以根据自由软件基金会发布的 GPL（GNU General Public License，即 GNU通用公共许可证）的条款
+* 即 GPL 的第3版（即 GPL3.0）或（您选择的）任何后来的版本，重新发布和/或修改它
+*
+* 本开源库的发布是希望它能发挥作用，但并未对其作任何的保证
+* 甚至没有隐含的适销性或适合特定用途的保证
+* 更多细节请参见 GPL
+*
+* 您应该在收到本开源库的同时收到一份 GPL 的副本
+* 如果没有，请参阅<https://www.gnu.org/licenses/>
+*
+* 额外注明：
+* 本开源库使用 GPL3.0 开源许可证协议 以上许可申明为译文版本
+* 许可申明英文版在 libraries/doc 文件夹下的 GPL3_permission_statement.txt 文件中
+* 许可证副本在 libraries 文件夹下 即该文件夹下的 LICENSE 文件
+* 欢迎各位使用并传播本程序 但修改内容时必须保留逐飞科技的版权声明（即本声明）
+*
+* 文件名称          main
+* 公司名称          成都逐飞科技有限公司
+* 适用平台          LS2K0300
+* 店铺链接          https://seekfree.taobao.com/
+*
+* 修改记录
+* 日期              作者           备注
+* 2025-12-27        大W            first version
+********************************************************************************************************************/
+#include <iostream>
+#include <cstring>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <cstdlib>
+#include <cstdio>
+#include <regex>
+#include "zf_common_headfile.hpp"
+
+#define KEY_1_PATH        ZF_GPIO_KEY_1
+#define KEY_2_PATH        ZF_GPIO_KEY_2
+#define KEY_3_PATH        ZF_GPIO_KEY_3
+#define KEY_4_PATH        ZF_GPIO_KEY_4
+
+zf_driver_gpio  key_0(KEY_1_PATH, O_RDWR);
+zf_driver_gpio  key_1(KEY_2_PATH, O_RDWR);
+zf_driver_gpio  key_2(KEY_3_PATH, O_RDWR);
+zf_driver_gpio  key_3(KEY_4_PATH, O_RDWR);
+
+zf_device_ips200 ips200;
+
+void sigint_handler(int signum) 
+{
+    printf("收到Ctrl+C，程序即将退出\n");
+    exit(0);
+}
+
+void cleanup()
+{
+    // 需要先停止定时器线程，后面才能稳定关闭电机，电调，舵机等
+    printf("程序异常退出，执行清理操作\n");
+    // 关闭电机  
+}
+std::string exec(const char* cmd) {
+    char buffer[128];
+    std::string result = "";
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) throw std::runtime_error("popen() failed!");
+    try {
+        while (fgets(buffer, sizeof buffer, pipe) != NULL) {
+            result += buffer;
+        }
+    } catch (...) {
+        pclose(pipe);
+        throw;
+    }
+    pclose(pipe);
+    return result;
+}
+std::string get_wireless_interface() {
+    // try {
+    //     std::string output = exec("iwconfig 2>&1");
+    //     std::istringstream iss(output);
+    //     std::string line;
+    //     while (getline(iss, line)) {
+    //         if (line.find("IEEE 802.11") != std::string::npos) {
+    //             return line.substr(0, line.find(" "));
+    //         }
+    //     }
+    // } catch (...) {}
+    return "wlan0"; // 默认值
+}
+struct NetworkInfo {
+    std::string id;
+    std::string ssid;
+    std::string flags;
+};
+std::vector<NetworkInfo> get_networks(const std::string& interface) {
+    std::vector<NetworkInfo> networks;
+    std::string cmd = "wpa_cli -i " + interface + " list_networks";
+    std::string output = exec(cmd.c_str());
+
+    std::istringstream iss(output);
+    std::string line;
+    bool header_found = false;
+
+    while (getline(iss, line)) {
+        if (!header_found) {
+            if (line.find("network id") != std::string::npos) {
+                header_found = true;
+            }
+            continue;
+        }
+        std::regex re("\\t+");
+        std::sregex_token_iterator it(line.begin(), line.end(), re, -1);
+        std::vector<std::string> parts(it, {});
+
+        if (parts.size() >= 3) {
+            NetworkInfo info;
+            info.id = parts[0];
+            info.ssid = parts[1];
+            info.flags = parts.size() >=4 ? parts[3] : "";
+            networks.push_back(info);
+        }
+    }
+    return networks;
+}
+bool select_network(const std::string& interface, const std::string& net_id) {
+    std::string cmd = "wpa_cli -i " + interface + " select_network " + net_id;
+    std::string result = exec(cmd.c_str());
+
+    if (result.find("OK") != std::string::npos) {
+        exec(("wpa_cli -i " + interface + " save_config").c_str());
+        //cout << "已成功选择网络，正在连接..." << endl;
+		exec("udhcpc -i wlan0");
+        // 释放和获取IP地址
+        system(("dhclient -r " + interface + " >/dev/null 2>&1").c_str());
+        system(("dhclient " + interface + " >/dev/null 2>&1").c_str());
+        return true;
+    }
+    return false;
+}
+std::vector<std::string> ips_wlan_list;
+std::string interface = get_wireless_interface();
+auto find_wifi(){
+	ips_wlan_list.clear();
+	auto networks = get_networks(interface);
+	for (size_t i = 0; i < networks.size(); ++i) {
+		std::string status = (networks[i].flags.find("CURRENT") != std::string::npos) ?
+					   "当前连接" : "已保存";
+		if(status == "当前连接")ips_wlan_list.push_back(std::to_string(i+1)+"."+networks[i].ssid+"(connect)");
+		else ips_wlan_list.push_back(std::to_string(i+1)+"."+networks[i].ssid);
+	}
+	return networks;
+}
+void connect_wifi(std::vector<NetworkInfo> networks,int choice){
+	if (select_network(interface, networks[choice-1].id)) {
+		std::string status = exec(("wpa_cli -i " + interface + " status").c_str());
+	}
+}
+char eth0[INET_ADDRSTRLEN];
+int show_eth0_on_screen(){
+		int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+		struct ifreq ifr;
+		memset(&ifr, 0, sizeof(ifr));
+		strncpy(ifr.ifr_name, "eth0", IFNAMSIZ - 1);
+		if (ioctl(sockfd, SIOCGIFADDR, &ifr) == -1) {
+			close(sockfd);
+			return 0;
+		}
+		struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
+		if (inet_ntop(AF_INET, &ipaddr->sin_addr, eth0, sizeof(eth0))) {
+			ips200.show_string( 0 , 0,   "eth0:");
+			ips200.show_string( 0 , 16,   eth0);
+		} else {
+			close(sockfd);
+		}
+		close(sockfd);
+		return 0;
+}
+char wlan0[INET_ADDRSTRLEN];
+int show_wlan0_on_screen(){
+		int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+		struct ifreq ifr;
+		memset(&ifr, 0, sizeof(ifr));
+		strncpy(ifr.ifr_name, "wlan0", IFNAMSIZ - 1);
+		if (ioctl(sockfd, SIOCGIFADDR, &ifr) == -1) {
+			close(sockfd);
+			return 0;
+		}
+		struct sockaddr_in* ipaddr = (struct sockaddr_in*)&ifr.ifr_addr;
+		if (inet_ntop(AF_INET, &ipaddr->sin_addr, wlan0, sizeof(wlan0))) {
+			ips200.show_string( 0 , 32,   "wlan0:");
+			ips200.show_string( 0 , 48,   wlan0);
+		} else {
+			close(sockfd);
+		}
+		close(sockfd);
+		return 0;
+}
+int main(int,char**) {
+	exec("wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf -D nl80211");
+	exec("udhcpc -i wlan0");
+	ips200.init(FB_PATH,0);
+	ips200.clear();
+	unsigned int i;
+	bool configure_state = 0;
+	uint wifi_num = 1;
+	while(1){
+		auto network = find_wifi();
+		while(!configure_state){
+			find_wifi();
+			ips200.show_string(0,0,"WIFI list");
+			for(i = 0;i < ips_wlan_list.size();i++)ips200.show_string(0,16*(i+1),ips_wlan_list[i].c_str());
+			ips200.show_string(0,16*17,"up:p16,down:p15");
+			ips200.show_string(0,16*18,"press p14 to connect to:");
+			if(!key_3.get_level()){
+				system_delay_ms(50);
+				while(!key_3.get_level());
+				wifi_num--;
+				ips200.clear();
+			}
+			if(!key_2.get_level()){
+				system_delay_ms(50);
+				while(!key_2.get_level());
+				wifi_num++;
+				ips200.clear();
+			}
+			if(wifi_num == 0)wifi_num = 1;
+			if(wifi_num == ips_wlan_list.size()+1)wifi_num = ips_wlan_list.size();
+			ips200.show_string(0,0,"WIFI list");
+			for(i = 0;i < ips_wlan_list.size();i++)ips200.show_string(0,16*(i+1),ips_wlan_list[i].c_str());
+			ips200.show_string(0,16*17,"up:p16,down:p15");
+			ips200.show_string(0,16*18,"press p14 to connect to:");
+			ips200.show_string(0,16*19,ips_wlan_list[wifi_num-1].c_str());
+
+			if(!key_1.get_level()){
+				system_delay_ms(50);
+				while(!key_1.get_level());
+				configure_state = 1;
+			}
+			if(!key_0.get_level()){
+				system_delay_ms(200);
+				if(!key_0.get_level()){
+					ips200.clear();
+					goto a1;
+				}
+			}
+		}
+		connect_wifi(network,wifi_num);
+		find_wifi();
+		ips200.clear();
+        ips200.show_string(0,0,"WIFI list");
+        for(i = 0;i < ips_wlan_list.size();i++)ips200.show_string(0,16*(i+1),ips_wlan_list[i].c_str());
+        ips200.show_string(0,16*17,"up:p16,down:p15");
+        ips200.show_string(0,16*18,"press p14 to connect to:");
+        ips200.show_string(0,16*19,ips_wlan_list[wifi_num-1].c_str());
+		configure_state = 0;
+		if(!key_0.get_level()){
+			system_delay_ms(200);
+			if(!key_0.get_level()){
+				ips200.clear();
+				goto a1;
+			}
+		}
+	}
+	a1:ips200.clear();
+	while(!key_0.get_level());
+	while(1)
+    {
+        // 此处编写需要循环执行的代码
+		show_eth0_on_screen();
+		show_wlan0_on_screen();
+		ips200.show_string(0,64,"press P13 key");   
+		ips200.show_string(0,80,"for 0.2s to quit");
+		if(!key_0.get_level()){
+			system_delay_ms(200);
+			if(!key_0.get_level()){
+				ips200.clear();
+				return 0;
+			}
+		}
+		system_delay_ms(100);
+    }
+}
+
+// **************************** 代码区域 ****************************
+
+// *************************** 例程常见问题说明 ***************************
+// 遇到问题时请按照以下问题检查列表检查
+// 
+// 问题1：终端提示未找到xxx文件
+//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
+//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
+//      使用本历程，就需要使用我们逐飞科技提供的内核，否则提示xxx文件找不到
+//
+// 问题2：电机不转或者模块输出电压无变化
+//      如果使用主板测试，主板必须要用电池供电
+//      检查模块是否正确连接供电 必须使用电源线供电 不能使用杜邦线
+//      查看程序是否正常烧录，是否下载报错，确认正常按下复位按键
